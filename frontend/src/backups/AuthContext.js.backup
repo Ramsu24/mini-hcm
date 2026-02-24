@@ -1,0 +1,105 @@
+import React, { createContext, useState, useEffect, useContext, useRef } from 'react';
+import { 
+  createUserWithEmailAndPassword, 
+  signInWithEmailAndPassword,
+  signOut,
+  onAuthStateChanged
+} from 'firebase/auth';
+import { doc, setDoc, getDoc } from 'firebase/firestore';
+import { auth, db } from '../firebase/config';
+
+const AuthContext = createContext();
+
+export const useAuth = () => {
+  return useContext(AuthContext);
+};
+
+export function AuthProvider({ children }) {
+  const [currentUser, setCurrentUser] = useState(null);
+  const [userRole, setUserRole] = useState(null);
+  const [userTimezone, setUserTimezone] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const authListenerSet = useRef(false);
+
+  // Updated register function to include timezone
+  async function register(email, password, name, schedule = { start: '09:00', end: '18:00' }, timezone = 'America/New_York') {
+    const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+    
+    // Store additional user data in Firestore including timezone
+    await setDoc(doc(db, 'users', userCredential.user.uid), {
+      name,
+      email,
+      role: 'employee',
+      schedule,
+      timezone, // Save timezone
+      createdAt: new Date()
+    });
+    
+    return userCredential;
+  }
+
+  function login(email, password) {
+    return signInWithEmailAndPassword(auth, email, password);
+  }
+
+  function logout() {
+    return signOut(auth);
+  }
+
+  useEffect(() => {
+    if (authListenerSet.current) return;
+    authListenerSet.current = true;
+
+    console.log('AuthContext: Setting up auth listener');
+    
+    // Safety timeout - force loading to false after 5 seconds
+    const timeout = setTimeout(() => {
+      console.warn('AuthContext: Auth check timeout - forcing loading to false');
+      setLoading(false);
+    }, 5000);
+
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      console.log('AuthContext: onAuthStateChanged fired with user:', user?.email);
+      clearTimeout(timeout);
+      
+      if (user) {
+        try {
+          const userDoc = await getDoc(doc(db, 'users', user.uid));
+          if (userDoc.exists()) {
+            const userData = userDoc.data();
+            setUserRole(userData.role);
+            setUserTimezone(userData.timezone || 'America/New_York'); // Set timezone
+          }
+        } catch (error) {
+          console.error('Error fetching user data:', error);
+        }
+      } else {
+        setUserRole(null);
+        setUserTimezone(null);
+      }
+      
+      setCurrentUser(user);
+      setLoading(false);
+    });
+
+    return () => {
+      clearTimeout(timeout);
+      unsubscribe();
+    };
+  }, []);
+
+  const value = {
+    currentUser,
+    userRole,
+    userTimezone, // Expose timezone
+    register,
+    login,
+    logout
+  };
+
+  return (
+    <AuthContext.Provider value={value}>
+      {!loading && children}
+    </AuthContext.Provider>
+  );
+} 

@@ -1,0 +1,308 @@
+import React, { useState, useEffect } from 'react';
+import { useAuth } from '../contexts/AuthContext';
+import { db } from '../firebase/config';
+import { collection, getDocs, updateDoc, doc } from 'firebase/firestore';
+import axios from 'axios';
+import { format, startOfWeek, endOfWeek } from 'date-fns';
+
+function AdminDashboard() {
+  const { logout } = useAuth();
+  const [users, setUsers] = useState([]);
+  const [summaries, setSummaries] = useState({});
+  const [dateRange, setDateRange] = useState('daily');
+  const [selectedDate, setSelectedDate] = useState(format(new Date(), 'yyyy-MM-dd'));
+  const [loading, setLoading] = useState(false);
+  const [editingUser, setEditingUser] = useState(null);
+  const [editSchedule, setEditSchedule] = useState({ start: '', end: '' });
+
+  useEffect(() => {
+    fetchUsers();
+  }, []);
+
+  useEffect(() => {
+    if (dateRange === 'daily') {
+      fetchDailyReports();
+    } else {
+      fetchWeeklyReports();
+    }
+  }, [dateRange, selectedDate]);
+
+  const fetchUsers = async () => {
+    const querySnapshot = await getDocs(collection(db, 'users'));
+    const usersData = [];
+    querySnapshot.forEach((doc) => {
+      usersData.push({ id: doc.id, ...doc.data() });
+    });
+    setUsers(usersData);
+  };
+
+  const fetchDailyReports = async () => {
+    setLoading(true);
+    try {
+      const response = await axios.get('http://localhost:5000/api/admin/all-summaries', {
+        params: {
+          startDate: selectedDate,
+          endDate: selectedDate
+        }
+      });
+      setSummaries(response.data);
+    } catch (error) {
+      console.error('Error fetching daily reports:', error);
+    }
+    setLoading(false);
+  };
+
+  const fetchWeeklyReports = async () => {
+    setLoading(true);
+    try {
+      const start = format(startOfWeek(new Date(selectedDate)), 'yyyy-MM-dd');
+      const end = format(endOfWeek(new Date(selectedDate)), 'yyyy-MM-dd');
+      
+      const response = await axios.get('http://localhost:5000/api/admin/all-summaries', {
+        params: {
+          startDate: start,
+          endDate: end
+        }
+      });
+      setSummaries(response.data);
+    } catch (error) {
+      console.error('Error fetching weekly reports:', error);
+    }
+    setLoading(false);
+  };
+
+  const handleScheduleUpdate = async (userId) => {
+    try {
+      await updateDoc(doc(db, 'users', userId), {
+        schedule: editSchedule
+      });
+      setEditingUser(null);
+      // Refresh user data
+      fetchUsers();
+    } catch (error) {
+      console.error('Error updating schedule:', error);
+    }
+  };
+
+  const calculateWeeklyTotals = (userSummaries) => {
+    const totals = {
+      regularHours: 0,
+      overtime: 0,
+      nightDiff: 0,
+      lateMinutes: 0,
+      undertimeMinutes: 0,
+      totalHours: 0
+    };
+
+    userSummaries.forEach(summary => {
+      totals.regularHours += summary.regularHours || 0;
+      totals.overtime += summary.overtime || 0;
+      totals.nightDiff += summary.nightDiff || 0;
+      totals.lateMinutes += summary.lateMinutes || 0;
+      totals.undertimeMinutes += summary.undertimeMinutes || 0;
+      totals.totalHours += summary.totalHours || 0;
+    });
+
+    return totals;
+  };
+
+  return (
+    <div className="min-h-screen bg-gray-100">
+      <nav className="bg-white shadow-lg">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex justify-between h-16">
+            <div className="flex items-center">
+              <h1 className="text-xl font-semibold">Admin Dashboard - Mini HCM</h1>
+            </div>
+            <div className="flex items-center space-x-4">
+              <button
+                onClick={logout}
+                className="bg-red-500 hover:bg-red-700 text-white font-bold py-2 px-4 rounded"
+              >
+                Logout
+              </button>
+            </div>
+          </div>
+        </div>
+      </nav>
+
+      <div className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
+        {/* Controls */}
+        <div className="bg-white overflow-hidden shadow-xl sm:rounded-lg p-6 mb-6">
+          <div className="flex space-x-4 items-center">
+            <div>
+              <label className="block text-sm font-medium text-gray-700">Report Type</label>
+              <select
+                value={dateRange}
+                onChange={(e) => setDateRange(e.target.value)}
+                className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md"
+              >
+                <option value="daily">Daily Report</option>
+                <option value="weekly">Weekly Report</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700">Date</label>
+              <input
+                type="date"
+                value={selectedDate}
+                onChange={(e) => setSelectedDate(e.target.value)}
+                className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md"
+              />
+            </div>
+          </div>
+        </div>
+
+        <div className="mb-4">
+          <button
+            onClick={() => window.location.href = '/admin/users'}
+            className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded"
+          >
+            Manage Users & Schedules
+          </button>
+        </div>
+
+        {/* Reports */}
+        {loading ? (
+          <div className="text-center py-12">Loading...</div>
+        ) : (
+          <div className="bg-white overflow-hidden shadow-xl sm:rounded-lg p-6">
+            <h2 className="text-lg font-semibold mb-4">
+              {dateRange === 'daily' ? 'Daily Reports' : 'Weekly Reports'} - {selectedDate}
+            </h2>
+            
+            <div className="space-y-6">
+              {users.map(user => {
+                const userSummaries = summaries[user.id] || [];
+                if (userSummaries.length === 0) return null;
+                
+                const displayData = dateRange === 'weekly' 
+                  ? calculateWeeklyTotals(userSummaries)
+                  : userSummaries[0];
+                
+                return (
+                  <div key={user.id} className="border rounded-lg p-4">
+                    <div className="flex justify-between items-center mb-2">
+                      <h3 className="font-medium text-lg">{user.name} ({user.email})</h3>
+                      <button
+                        onClick={() => {
+                          setEditingUser(user.id);
+                          setEditSchedule(user.schedule || { start: '09:00', end: '18:00' });
+                        }}
+                        className="bg-blue-500 text-white px-3 py-1 rounded text-sm"
+                      >
+                        Edit Schedule
+                      </button>
+                    </div>
+
+                    <p className="text-gray-600 mb-2">Current Shift: {user.schedule?.start || '09:00'} - {user.schedule?.end || '18:00'}</p>
+                    
+                    {dateRange === 'weekly' && (
+                      <div className="mb-2 text-sm text-gray-600">
+                        <p>Week of {format(startOfWeek(new Date(selectedDate)), 'MMM dd, yyyy')} - {format(endOfWeek(new Date(selectedDate)), 'MMM dd, yyyy')}</p>
+                        <p>Days worked: {userSummaries.length}</p>
+                      </div>
+                    )}
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4">
+                      <div className="bg-blue-50 p-3 rounded">
+                        <p className="text-sm text-gray-600">Regular Hours</p>
+                        <p className="text-xl font-bold">{displayData?.regularHours?.toFixed(2) || 0}</p>
+                      </div>
+                      <div className="bg-green-50 p-3 rounded">
+                        <p className="text-sm text-gray-600">Overtime</p>
+                        <p className="text-xl font-bold">{displayData?.overtime?.toFixed(2) || 0}</p>
+                      </div>
+                      <div className="bg-purple-50 p-3 rounded">
+                        <p className="text-sm text-gray-600">Night Diff</p>
+                        <p className="text-xl font-bold">{displayData?.nightDiff?.toFixed(2) || 0}</p>
+                      </div>
+                      <div className="bg-yellow-50 p-3 rounded">
+                        <p className="text-sm text-gray-600">Late (min)</p>
+                        <p className="text-xl font-bold">{displayData?.lateMinutes || 0}</p>
+                      </div>
+                      <div className="bg-orange-50 p-3 rounded">
+                        <p className="text-sm text-gray-600">Undertime (min)</p>
+                        <p className="text-xl font-bold">{displayData?.undertimeMinutes || 0}</p>
+                      </div>
+                      <div className="bg-gray-50 p-3 rounded">
+                        <p className="text-sm text-gray-600">Total Hours</p>
+                        <p className="text-xl font-bold">{displayData?.totalHours?.toFixed(2) || 0}</p>
+                      </div>
+                    </div>
+
+                    {/* Edit form (shown only for this user) */}
+                    {editingUser === user.id && (
+                      <div className="mt-4 p-4 bg-gray-50 rounded">
+                        <div className="flex space-x-4">
+                          <div>
+                            <label className="block text-sm">Start Time</label>
+                            <input
+                              type="time"
+                              value={editSchedule.start}
+                              onChange={(e) => setEditSchedule({...editSchedule, start: e.target.value})}
+                              className="border rounded px-2 py-1"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-sm">End Time</label>
+                            <input
+                              type="time"
+                              value={editSchedule.end}
+                              onChange={(e) => setEditSchedule({...editSchedule, end: e.target.value})}
+                              className="border rounded px-2 py-1"
+                            />
+                          </div>
+                          <div className="flex items-end space-x-2">
+                            <button
+                              onClick={() => handleScheduleUpdate(user.id)}
+                              className="bg-green-500 text-white px-3 py-1 rounded"
+                            >
+                              Save
+                            </button>
+                            <button
+                              onClick={() => setEditingUser(null)}
+                              className="bg-gray-500 text-white px-3 py-1 rounded"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Daily breakdown for weekly view */}
+                    {dateRange === 'weekly' && userSummaries.length > 1 && (
+                      <div className="mt-4">
+                        <p className="text-sm font-medium text-gray-700 mb-2">Daily Breakdown:</p>
+                        <div className="space-y-2">
+                          {userSummaries.map((summary, idx) => (
+                            <div key={idx} className="text-sm grid grid-cols-7 gap-2 bg-gray-50 p-2 rounded">
+                              <span className="font-medium">{summary.date}</span>
+                              <span>Reg: {summary.regularHours?.toFixed(1)}</span>
+                              <span>OT: {summary.overtime?.toFixed(1)}</span>
+                              <span>ND: {summary.nightDiff?.toFixed(1)}</span>
+                              <span>Late: {summary.lateMinutes}min</span>
+                              <span>Under: {summary.undertimeMinutes}min</span>
+                              <span>Total: {summary.totalHours?.toFixed(1)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+
+              {Object.keys(summaries).length === 0 && (
+                <p className="text-center text-gray-500 py-8">No data available for selected date range</p>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export default AdminDashboard;

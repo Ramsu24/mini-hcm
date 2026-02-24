@@ -1,0 +1,100 @@
+import React, { useState } from 'react';
+import { useNavigate, Link } from 'react-router-dom';
+
+function Login() {
+  console.log('🔵 Login component rendering');
+  
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const navigate = useNavigate();
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    console.log('Login attempted');
+    navigate('/dashboard');
+  };
+
+  const styles = {
+    container: {
+      minHeight: '100vh',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: '#f3f4f6'
+    },
+    box: {
+      backgroundColor: 'white',
+      padding: '40px',
+      borderRadius: '8px',
+      boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)',
+      width: '100%',
+      maxWidth: '400px'
+    },
+    title: {
+      fontSize: '24px',
+      fontWeight: 'bold',
+      textAlign: 'center',
+      marginBottom: '20px',
+      color: '#111827'
+    },
+    input: {
+      width: '100%',
+      padding: '10px',
+      marginBottom: '15px',
+      border: '1px solid #d1d5db',
+      borderRadius: '4px',
+      fontSize: '16px'
+    },
+    button: {
+      width: '100%',
+      padding: '10px',
+      backgroundColor: '#4f46e5',
+      color: 'white',
+      border: 'none',
+      borderRadius: '4px',
+      fontSize: '16px',
+      cursor: 'pointer'
+    },
+    link: {
+      display: 'block',
+      textAlign: 'center',
+      marginTop: '15px',
+      color: '#4f46e5',
+      textDecoration: 'none'
+    }
+  };
+
+  return (
+    <div style={styles.container}>
+      <div style={styles.box}>
+        <h1 style={styles.title}>Mini HCM</h1>
+        <form onSubmit={handleSubmit}>
+          <input
+            type="email"
+            placeholder="Email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            style={styles.input}
+            required
+          />
+          <input
+            type="password"
+            placeholder="Password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            style={styles.input}
+            required
+          />
+          <button type="submit" style={styles.button}>
+            Sign In
+          </button>
+        </form>
+        <Link to="/register" style={styles.link}>
+          Create an account
+        </Link>
+      </div>
+    </div>
+  );
+}
+
+export default Login;
